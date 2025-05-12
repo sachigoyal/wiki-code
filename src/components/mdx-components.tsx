@@ -1,6 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { Copy } from "lucide-react";
+import { useState } from "react";
 
 const CustomLink = (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
   const href = props.href;
@@ -46,11 +48,48 @@ const Heading3 = ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElemen
   </h3>
 );
 
-const CodeBlock = ({ children, className, ...props }: React.HTMLAttributes<HTMLPreElement>) => (
-  <pre {...props} className={cn("my-3 overflow-x-auto rounded-lg", className)}>
-    {children}
-  </pre>
-);
+const CopyButton = ({ text }: { text: string }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute right-2 top-2 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+      aria-label="Copy code"
+    >
+      <Copy size={16} className={copied ? "text-green-500" : ""} />
+    </button>
+  );
+};
+
+const CodeBlock = ({ children, className, ...props }: React.HTMLAttributes<HTMLPreElement>) => {
+  const getTextContent = (children: React.ReactNode): string => {
+    if (typeof children === 'string') return children;
+    if (Array.isArray(children)) return children.map(getTextContent).join('');
+    if (children && typeof children === 'object' && 
+        'props' in (children as any) && (children as any).props) {
+      return getTextContent((children as any).props.children);
+    }
+    return '';
+  };
+  
+  const codeText = getTextContent(children);
+  
+  return (
+    <div className="relative">
+      <pre {...props} className={cn("my-3 overflow-x-auto rounded-lg", className)}>
+        {children}
+      </pre>
+      <CopyButton text={codeText} />
+    </div>
+  );
+};
 
 const Code = ({ children, ...props }: React.HTMLAttributes<HTMLElement>) => (
   <code {...props} className={cn("relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm", props.className)}>

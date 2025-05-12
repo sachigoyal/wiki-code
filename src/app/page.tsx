@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AnimatedShinyText } from "@/components/magicui/animated-shiny-text";
 import { ModeToggle } from "@/components/mode-toggle";
-import { CodeXml, Loader2, Settings, Text, RefreshCw, Send } from "lucide-react";
+import { CodeXml, Loader2, Settings, Text, RefreshCw, Send, AlertTriangle, Clock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -11,22 +11,69 @@ import { streamRefactorCode, streamExplainCode, streamGenerateCode } from "@/act
 import { MDXContent } from "@/components/mdx-content";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 export default function Home() {
   const [code, setCode] = useState("");
   const [userPrompt, setUserPrompt] = useState("");
+  const [clientIp, setClientIp] = useState<string>("unknown");
 
   const [explanationLoading, setExplanationLoading] = useState(false);
   const [refactoringLoading, setRefactoringLoading] = useState(false);
   const [generatingCodeLoading, setGeneratingCodeLoading] = useState(false);
   const [result, setResult] = useState("");
+  const [error, setError] = useState<{ type: "rate-limit" | "general" | null; message: string }>({ 
+    type: null, 
+    message: "" 
+  });
+  const [lastAction, setLastAction] = useState<"explain" | "refactor" | "generate" | null>(null);
+  const [retryTimeout, setRetryTimeout] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("https://api.ipify.org?format=json")
+      .then(response => response.json())
+      .then(data => setClientIp(data.ip))
+      .catch(error => console.error("Failed to fetch IP:", error));
+  }, []);
+
+  useEffect(() => {
+    // Clear retry timeout on unmount
+    return () => {
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+    };
+  }, [retryTimeout]);
+
+  const handleError = (errorMessage: string) => {
+    if (errorMessage.includes("Rate limit exceeded")) {
+      setError({ 
+        type: "rate-limit", 
+        message: "Rate limit exceeded. Please wait a minute before trying again." 
+      });
+
+      // Auto-retry after 60 seconds
+      const timeout = window.setTimeout(() => {
+        setError({ type: null, message: "" });
+      }, 60000);
+      
+      setRetryTimeout(timeout);
+    } else {
+      setError({ 
+        type: "general", 
+        message: errorMessage || "An unexpected error occurred. Please try again later." 
+      });
+    }
+  };
 
   const handleRefactor = async () => {
     setRefactoringLoading(true);
     setResult("");
+    setError({ type: null, message: "" });
+    setLastAction("refactor");
 
     try {
-      const stream = await streamRefactorCode(code, userPrompt);
+      const stream = await streamRefactorCode(code, userPrompt, clientIp);
 
       const reader = stream.getReader();
       const decoder = new TextDecoder();
@@ -40,7 +87,8 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Refactoring failed:", error);
-      setResult("Error occurred during refactoring.");
+      const errorMessage = error instanceof Error ? error.message : "Error occurred during refactoring.";
+      handleError(errorMessage);
     } finally {
       setRefactoringLoading(false);
     }
@@ -49,9 +97,11 @@ export default function Home() {
   const handleExplanation = async () => {
     setExplanationLoading(true);
     setResult("");
+    setError({ type: null, message: "" });
+    setLastAction("explain");
 
     try {
-      const stream = await streamExplainCode(code, userPrompt);
+      const stream = await streamExplainCode(code, userPrompt, clientIp);
 
       const reader = stream.getReader();
       const decoder = new TextDecoder();
@@ -65,20 +115,21 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Explanation failed:", error);
-      setResult("Error occurred during explanation.");
+      const errorMessage = error instanceof Error ? error.message : "Error occurred during explanation.";
+      handleError(errorMessage);
     } finally {
       setExplanationLoading(false);
     }
   };
 
-
-
   const handleGenerateCode = async () => {
     setGeneratingCodeLoading(true);
     setResult("");
+    setError({ type: null, message: "" });
+    setLastAction("generate");
 
     try {
-      const stream = await streamGenerateCode(code, userPrompt);
+      const stream = await streamGenerateCode(code, userPrompt, clientIp);
 
       const reader = stream.getReader();
       const decoder = new TextDecoder();
@@ -92,9 +143,26 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Generating code failed:", error);
-      setResult("Error occurred during generating code.");
+      const errorMessage = error instanceof Error ? error.message : "Error occurred during generating code.";
+      handleError(errorMessage);
     } finally {
       setGeneratingCodeLoading(false);
+    }
+  };
+
+  const handleRetry = () => {
+    if (error.type === "rate-limit") {
+      return; // Don't allow retry if rate limited
+    }
+    
+    setError({ type: null, message: "" });
+    
+    if (lastAction === "explain") {
+      handleExplanation();
+    } else if (lastAction === "refactor") {
+      handleRefactor();
+    } else if (lastAction === "generate") {
+      handleGenerateCode();
     }
   };
 
@@ -102,6 +170,49 @@ export default function Home() {
     setCode("");
     setUserPrompt("");
     setResult("");
+    setError({ type: null, message: "" });
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      setRetryTimeout(null);
+    }
+  };
+
+  const isLoading = explanationLoading || refactoringLoading || generatingCodeLoading;
+  const isDisabled = isLoading || error.type === "rate-limit";
+
+  const renderErrorContent = () => {
+    if (error.type === "rate-limit") {
+      return (
+        <Alert variant="destructive" className="mb-4">
+          <Clock className="h-4 w-4" />
+          <AlertTitle>Rate Limit Exceeded</AlertTitle>
+          <AlertDescription>
+            {error.message}
+            <div className="mt-2">
+              <Button variant="outline" size="sm" disabled className="animate-pulse">
+                Cooldown in progress...
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      );
+    } else if (error.type === "general") {
+      return (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>
+            {error.message}
+            <div className="mt-2">
+              <Button variant="outline" size="sm" onClick={handleRetry}>
+                Retry
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      );
+    }
+    return null;
   };
 
   return (
@@ -135,8 +246,8 @@ export default function Home() {
                   className="w-full"
                 />
               </div>
-              <Button onClick={handleGenerateCode}>
-                <Send size={16} />
+              <Button onClick={handleGenerateCode} disabled={isDisabled}>
+                {generatingCodeLoading ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
               </Button>
             </div>
             <Textarea
@@ -146,11 +257,11 @@ export default function Home() {
               className="h-full w-full resize-none font-mono"
             />
             <div className="flex items-center gap-2">
-              <Button variant="outline" className="flex-1" onClick={handleRefactor} disabled={refactoringLoading || explanationLoading}>
+              <Button variant="outline" className="flex-1" onClick={handleRefactor} disabled={isDisabled}>
                 {refactoringLoading ? <Loader2 className="animate-spin mr-2" /> : <Settings size={16} className="mr-2" />}
                 {refactoringLoading ? "Refactoring..." : "Refactor Code"}
               </Button>
-              <Button className="flex-1" onClick={handleExplanation} disabled={explanationLoading || refactoringLoading}>
+              <Button className="flex-1" onClick={handleExplanation} disabled={isDisabled}>
                 {explanationLoading ? <Loader2 className="animate-spin mr-2" /> : <Text size={16} className="mr-2" />}
                 {explanationLoading ? "Explaining..." : "Explain Code"}
               </Button>
@@ -160,12 +271,14 @@ export default function Home() {
             </div>
           </Card>
           <Card className="p-4 text-sm hover:shadow-md overflow-y-auto">
-            {(explanationLoading || refactoringLoading || generatingCodeLoading) && result === "" ? (
+            {error.type ? (
+              renderErrorContent()
+            ) : isLoading && result === "" ? (
               <div className="h-full flex flex-col justify-end">
                 <Button variant="outline" className="animate-pulse mx-auto w-fit">Waiting for response...</Button>
               </div>
             ) : result ? (
-              <MDXContent content={result} />
+              <MDXContent content={result} onRetry={handleRetry} />
             ) : (
               <div className="h-full flex flex-col items-center justify-center gap-4 text-muted-foreground">
                 <div className="relative">

@@ -8,7 +8,34 @@ if (!GEMINI_API_KEY) {
   throw new Error("GEMINI_API_KEY is not set");
 }
 
-export async function streamRefactorCode(prompt: string, userPrompt: string = "") {
+const MAX_REQUESTS_PER_MINUTE = 5;
+
+const rateLimitMap = new Map<string, number[]>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  
+  if (!rateLimitMap.has(ip)) {
+    rateLimitMap.set(ip, [now]);
+    return true;
+  }
+  
+  const timestamps = rateLimitMap.get(ip)!;
+  const windowStart = now - windowMs;
+  
+  const recentTimestamps = timestamps.filter(time => time > windowStart);
+  
+  rateLimitMap.set(ip, [...recentTimestamps, now]);
+  
+  return recentTimestamps.length < MAX_REQUESTS_PER_MINUTE;
+}
+
+export async function streamRefactorCode(prompt: string, userPrompt: string = "", ip: string = "unknown") {
+  if (!checkRateLimit(ip)) {
+    throw new Error("Rate limit exceeded. Please try again later.");
+  }
+  
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   const systemPrompt = `
@@ -51,7 +78,11 @@ export async function streamRefactorCode(prompt: string, userPrompt: string = ""
   return stream;
 }
 
-export async function refactorCode(prompt: string, userPrompt: string = "") {
+export async function refactorCode(prompt: string, userPrompt: string = "", ip: string = "unknown") {
+  if (!checkRateLimit(ip)) {
+    throw new Error("Rate limit exceeded. Please try again later.");
+  }
+  
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   const systemPrompt = `
@@ -86,7 +117,11 @@ export async function refactorCode(prompt: string, userPrompt: string = "") {
   return fullText;
 }
 
-export async function streamExplainCode(prompt: string, userPrompt: string = "") {
+export async function streamExplainCode(prompt: string, userPrompt: string = "", ip: string = "unknown") {
+  if (!checkRateLimit(ip)) {
+    throw new Error("Rate limit exceeded. Please try again later.");
+  }
+  
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   const systemPrompt = `
@@ -129,7 +164,11 @@ export async function streamExplainCode(prompt: string, userPrompt: string = "")
   return stream;
 }
 
-export async function explainCode(prompt: string, userPrompt: string = "") {
+export async function explainCode(prompt: string, userPrompt: string = "", ip: string = "unknown") {
+  if (!checkRateLimit(ip)) {
+    throw new Error("Rate limit exceeded. Please try again later.");
+  }
+  
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   const systemPrompt = `
@@ -164,7 +203,11 @@ export async function explainCode(prompt: string, userPrompt: string = "") {
   return fullText;
 }
 
-export async function streamGenerateCode(prompt: string, userPrompt: string = "") {
+export async function streamGenerateCode(prompt: string, userPrompt: string = "", ip: string = "unknown") {
+  if (!checkRateLimit(ip)) {
+    throw new Error("Rate limit exceeded. Please try again later.");
+  }
+  
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   const systemPrompt = `

@@ -6,15 +6,24 @@ import { MDXRemote as MDXRemoteClient } from 'next-mdx-remote';
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { mdxComponents } from "./mdx-components";
+import { Copy, RefreshCw } from "lucide-react";
 
 interface MDXContentProps {
   content: string;
+  onRetry?: () => void;
 }
 
-export function MDXContent({ content }: MDXContentProps) {
+export function MDXContent({ content, onRetry }: MDXContentProps) {
   const [mounted, setMounted] = useState(false);
   const [mdxSource, setMdxSource] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyResponse = async () => {
+    await navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -75,8 +84,30 @@ export function MDXContent({ content }: MDXContentProps) {
   }
 
   return (
-    <div className="mdx-content prose dark:prose-invert max-w-none prose-headings:scroll-mt-20 prose-pre:bg-muted prose-pre:border prose-pre:rounded-md prose-pre:p-4">
-      <MDXRemoteClient {...mdxSource} components={mdxComponents} />
+    <div className="relative">
+      <div className="mdx-content prose dark:prose-invert max-w-none prose-headings:scroll-mt-20 prose-pre:bg-muted prose-pre:border prose-pre:rounded-md prose-pre:p-4">
+        <MDXRemoteClient {...mdxSource} components={mdxComponents} />
+        <div className="flex items-center gap-2 p-1 w-fit mt-1">
+          <button
+            onClick={handleCopyResponse}
+            className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
+            aria-label="Copy response"
+            title="Copy response"
+          >
+            <Copy size={16} className={copied ? "text-green-400" : ""} />
+          </button>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
+              aria-label="Retry"
+              title="Retry"
+            >
+              <RefreshCw size={16} />
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 } 
