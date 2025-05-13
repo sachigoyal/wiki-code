@@ -76,15 +76,10 @@ export default function Home() {
     }
   };
 
-  const handleRefactor = async () => {
-    setRefactoringLoading(true);
-    setResult("");
-    setError({ type: null, message: "" });
-    setLastAction("refactor");
-
+  const handleStreamResponse = async (stream: ReadableStream, actionType: "explain" | "refactor" | "generate") => {
+    let resultText = "";
+    
     try {
-      const stream = await streamRefactorCode(code, userPrompt, clientIp);
-
       const reader = stream.getReader();
       const decoder = new TextDecoder();
 
@@ -93,8 +88,40 @@ export default function Home() {
         if (done) break;
 
         const text = typeof value === 'string' ? value : decoder.decode(value);
-        setResult(prev => prev + text);
+        resultText += text;
+        setResult(resultText);
       }
+      
+      // Verify the MDX content has balanced braces
+      const openBraces = (resultText.match(/{/g) || []).length;
+      const closeBraces = (resultText.match(/}/g) || []).length;
+      
+      if (openBraces !== closeBraces) {
+        console.warn("Unbalanced braces in MDX response. Fixing by appending closing braces.");
+        for (let i = 0; i < openBraces - closeBraces; i++) {
+          resultText += "}";
+        }
+        setResult(resultText);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`${actionType} failed:`, error);
+      const errorMessage = error instanceof Error ? error.message : `Error occurred during ${actionType}.`;
+      handleError(errorMessage);
+      return false;
+    }
+  };
+
+  const handleRefactor = async () => {
+    setRefactoringLoading(true);
+    setResult("");
+    setError({ type: null, message: "" });
+    setLastAction("refactor");
+
+    try {
+      const stream = await streamRefactorCode(code, userPrompt, clientIp);
+      await handleStreamResponse(stream, "refactor");
     } catch (error) {
       console.error("Refactoring failed:", error);
       const errorMessage = error instanceof Error ? error.message : "Error occurred during refactoring.";
@@ -112,17 +139,7 @@ export default function Home() {
 
     try {
       const stream = await streamExplainCode(code, userPrompt, clientIp);
-
-      const reader = stream.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const text = typeof value === 'string' ? value : decoder.decode(value);
-        setResult(prev => prev + text);
-      }
+      await handleStreamResponse(stream, "explain");
     } catch (error) {
       console.error("Explanation failed:", error);
       const errorMessage = error instanceof Error ? error.message : "Error occurred during explanation.";
@@ -140,17 +157,7 @@ export default function Home() {
 
     try {
       const stream = await streamGenerateCode(code, userPrompt, clientIp);
-
-      const reader = stream.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const text = typeof value === 'string' ? value : decoder.decode(value);
-        setResult(prev => prev + text);
-      }
+      await handleStreamResponse(stream, "generate");
     } catch (error) {
       console.error("Generating code failed:", error);
       const errorMessage = error instanceof Error ? error.message : "Error occurred during generating code.";
