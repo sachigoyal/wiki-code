@@ -37,7 +37,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    // Clear retry timeout on unmount
     return () => {
       if (retryTimeout) {
         clearTimeout(retryTimeout);
@@ -52,17 +51,28 @@ export default function Home() {
         message: "Rate limit exceeded. Please wait a minute before trying again." 
       });
 
-      // Auto-retry after 60 seconds
       const timeout = window.setTimeout(() => {
         setError({ type: null, message: "" });
       }, 60000);
       
       setRetryTimeout(timeout);
-    } else {
-      setError({ 
-        type: "general", 
-        message: errorMessage || "An unexpected error occurred. Please try again later." 
+    } else if (errorMessage.includes("API key")) {
+      setError({
+        type: "general",
+        message: "Server configuration issue. Please try again later or contact support."
       });
+    } else if (errorMessage.includes("network") || errorMessage.includes("timeout")) {
+      setError({
+        type: "general",
+        message: "Network error. Please check your connection and try again."
+      });
+    } else {
+      setError({
+        type: "general", 
+        message: "Something went wrong. Please try again later."
+      });
+      
+      console.error("Original error:", errorMessage);
     }
   };
 
